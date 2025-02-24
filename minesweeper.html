@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>扫雷</title>
+    <style>
+        #game {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            font-family: Arial, sans-serif;
+        }
+
+        #board {
+            display: grid;
+            gap: 2px;
+            background: #ccc;
+            padding: 10px;
+            margin: 20px;
+        }
+
+        .cell {
+            width: 30px;
+            height: 30px;
+            background: #999;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            font-weight: bold;
+            font-size: 14px;
+        }
+
+        .revealed {
+            background: #fff;
+        }
+
+        .mine {
+            background: red;
+        }
+
+        .flagged {
+            background: #999 url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24"><path fill="%23ff0000" d="M14.4 6L14 4H5v17h2v-7h5.6l.4 2h7V6z"/></svg>') no-repeat center;
+            background-size: 60%;
+        }
+
+        #status {
+            margin: 10px;
+        }
+
+        button {
+            padding: 10px 20px;
+            margin: 10px;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+    <div id="game">
+        <div id="board"></div>
+        <div id="status">剩余雷数：<span id="mine-count">0</span></div>
+        <button onclick="initGame()">重新开始</button>
+    </div>
+    <script>
+        const ROWS = 10;
+        const COLS = 10;
+        const MINES = 15;
+        let board = [];
+        let minesLeft = MINES;
+
+        function initGame() {
+            minesLeft = MINES;
+            document.getElementById('mine-count').textContent = minesLeft;
+            board = Array(ROWS).fill().map(() => 
+                Array(COLS).fill().map(() => ({
+                    isMine: false,
+                    revealed: false,
+                    flagged: false,
+                    neighborMines: 0
+                }))
+            );
+
+            let minesPlaced = 0;
+            while (minesPlaced < MINES) {
+                const row = Math.floor(Math.random() * ROWS);
+                const col = Math.floor(Math.random() * COLS);
+                if (!board[row][col].isMine) {
+                    board[row][col].isMine = true;
+                    minesPlaced++;
+                }
+            }
+
+            for (let row = 0; row < ROWS; row++) {
+                for (let col = 0; col < COLS; col++) {
+                    if (!board[row][col].isMine) {
+                        board[row][col].neighborMines = countNeighborMines(row, col);
+                    }
+                }
+            }
+
+            renderBoard();
+        }
+
+        function countNeighborMines(row, col) {
+            let count = 0;
+            for (let i = -1; i <= 1; i++) {
+                for (let j = -1; j <= 1; j++) {
+                    const newRow = row + i;
+                    const newCol = col + j;
+                    if (newRow >= 0 && newRow < ROWS && newCol >= 0 && newCol < COLS) {
+                        if (board[newRow][newCol].isMine) count++;
+                    }
+                }
+            }
+            return count;
+        }
+
+        function renderBoard() {
+            const boardElement = document.getElementById('board');
+            boardElement.style.gridTemplateColumns = `repeat(${COLS}, 30px)`;
+            boardElement.innerHTML = '';
+
+            for (let row = 0; row < ROWS; row++) {
+                for (let col = 0; col < COLS; col++) {
+                    const cell = document.createElement('div');
+                    cell.className = 'cell';
+                    cell.dataset.row = row;
+                    cell.dataset.col = col;
+
+                    cell.oncontextmenu = function(e) {
+                        e.preventDefault();
+                        if (!board[row][col].revealed) {
+                            board[row][col].flagged = !board[row][col].flagged;
+                            minesLeft += board[row][col].flagged ? -1 : 1;
+                            document.getElementById('mine-count').textContent = minesLeft;
+                            renderBoard();
+                        }
+                    };
+
+                    cell.onclick = function() {
+                        if (!board[row][col].flagged && !board[row][col].revealed) {
+                            reveal(row, col);
+                            renderBoard();
+                        }
+                    };
+
+                    if (board[row][col].revealed) {
+                        cell.classList.add('revealed');
+                        if (board[row][col].isMine) {
+                            cell.classList.add('mine');
+                            cell.textContent = '💣';
+                        } else if (board[row][col].neighborMines > 0) {
+                            cell.textContent = board[row][col].neighborMines;
+                        }
+                    } else if (board[row][col].flagged) {
+                        cell.classList.add('flagged');
+                    }
+
+                    boardElement.appendChild(cell);
+                }
+            }
+        }
+
+        function reveal(row, col) {
+            if (board[row][col].revealed) return;
+            board[row][col].revealed = true;
+
+            if (board[row][col].isMine) {
+                alert('游戏结束！');
+                initGame();
+                return;
+            }
+
+            if (board[row][col].neighborMines === 0) {
+                for (let i = -1; i <= 1; i++) {
+                    for (let j = -1; j <= 1; j++) {
+                        const newRow = row + i;
+                        const newCol = col + j;
+                        if (newRow >= 0 && newRow < ROWS && newCol >= 0 && newCol < COLS) {
+                            if (!board[newRow][newCol].revealed) reveal(newRow, newCol);
+                        }
+                    }
+                }
+            }
+
+            checkWin();
+        }
+
+        function checkWin() {
+            let win = true;
+            for (let row = 0; row < ROWS; row++) {
+                for (let col = 0; col < COLS; col++) {
+                    if (!board[row][col].isMine && !board[row][col].revealed) {
+                        win = false;
+                        break;
+                    }
+                }
+            }
+            if (win) {
+                alert('你赢了！');
+                initGame();
+            }
+        }
+
+        // 初始化游戏
+        initGame();
+    </script>
+</body>
+</html>
