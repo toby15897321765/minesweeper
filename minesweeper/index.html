@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <style>
+        body { display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
+        #main-menu { text-align: center; }
+        .difficulty-btn { margin: 10px; padding: 15px 30px; font-size: 18px; }
+        #game-board { position: relative; }
+        .cell { 
+            width: 30px; 
+            height: 30px; 
+            border: 1px solid #999;
+            display: inline-block;
+            text-align: center;
+            vertical-align: top;
+            line-height: 30px;
+            cursor: pointer;
+            background: #ccc;
+        }
+        .revealed { background: #fff; }
+        .mine { background: red !important; }
+        .flag::after { content: "🚩"; }
+        .game-over { position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); }
+        .result-panel { 
+            position: fixed; 
+            top: 50%; 
+            left: 50%; 
+            transform: translate(-50%, -50%);
+            background: white;
+            padding: 20px;
+            text-align: center;
+        }
+        img.victory-img { max-width: 300px; max-height: 300px; }
+
+        /* 增加结果面板的样式 */
+        .result-panel {
+            border: 2px solid gold;
+            box-shadow: 0 0 20px rgba(0,0,0,0.3);
+            border-radius: 10px;
+        }
+
+        /* 按钮美化 */
+        .result-panel button {
+            margin: 10px;
+            padding: 8px 20px;
+            background: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+
+        .result-panel button:hover {
+            background: #45a049;
+        }
+    </style>
+</head>
+<body>
+    <!-- 主菜单 -->
+    <div id="main-menu">
+        <button class="difficulty-btn" data-difficulty="beginner">初级</button>
+        <button class="difficulty-btn" data-difficulty="intermediate">中级</button>
+        <button class="difficulty-btn" data-difficulty="expert">高级</button>
+    </div>
+
+    <!-- 游戏界面 -->
+    <div id="game-board" style="display: none;"></div>
+
+    <!-- 结果弹窗 -->
+    <div class="result-panel" style="display: none;">
+        <!-- 移除固定图片，改为动态创建 -->
+        <div id="result-content"></div>
+        <div>
+            <button onclick="backToMenu()">返回主页</button>
+            <button onclick="restartGame()">重新开始</button>
+        </div>
+    </div>
+</body>
+
+<script>
+// 在配置对象中添加图片路径
+let config = {
+    beginner: { rows: 9, cols: 9, mines: 10 ,victoryImg: 'beginner-victory.jpg'},
+    intermediate: { rows: 16, cols: 16, mines: 40,victoryImg: 'intermediate-victory.jpg' },
+    expert: { rows: 16, cols: 30, mines: 99,victoryImg: 'expert-victory.jpg' }
+};
+
+let gameState = {
+    board: [],
+    mines: new Set(),
+    flags: new Set(),
+    revealed: new Set(),
+    gameOver: false,
+    firstClick: true
+};
+
+// 初始化游戏
+function initGame(difficulty) {
+    const { rows, cols, mines } = config[difficulty];
+    gameState = {
+        board: Array(rows).fill().map(() => Array(cols).fill(0)),
+        mines: new Set(),
+        flags: new Set(),
+        revealed: new Set(),
+        gameOver: false,
+        firstClick: true,
+        difficulty,
+        rows,
+        cols,
+        mines
+    };
+    
+    document.getElementById('main-menu').style.display = 'none';
+    document.getElementById('game-board').style.display = 'block';
+    renderBoard();
+}
+
+// 生成地雷（确保第一次点击安全）
+function generateMines(safeRow, safeCol) {
+    const { rows, cols, mines } = gameState;
+    const totalCells = rows * cols;
+    const minesSet = new Set();
+    
+    while(minesSet.size < mines) {
+        const r = Math.floor(Math.random() * rows);
+        const c = Math.floor(Math.random() * cols);
+        if(r !== safeRow || c !== safeCol) {
+            minesSet.add(`${r},${c}`);
+        }
+    }
+    
+    gameState.mines = minesSet;
+}
+
+// 计算周围地雷数量
+function calculateNumbers() {
+    const { rows, cols } = gameState;
+    for(let r = 0; r < rows; r++) {
+        for(let c = 0; c < cols; c++) {
+            if(!gameState.mines.has(`${r},${c}`)) {
+                let count = 0;
+                for(let dr = -1; dr <= 1; dr++) {
+                    for(let dc = -1; dc <= 1; dc++) {
+                        if(dr === 0 && dc === 0) continue;
+                        const nr = r + dr;
+                        const nc = c + dc;
+                        if(nr >= 0 && nr < rows && nc >= 0 && nc < cols) {
+                            if(gameState.mines.has(`${nr},${nc}`)) count++;
+                        }
+                    }
+                }
+                gameState.board[r][c] = count;
+            }
+        }
+    }
+}
+
+// 渲染棋盘
+function renderBoard() {
+    const { rows, cols } = gameState;
+    const board = document.getElementById('game-board');
+    board.innerHTML = '';
+    board.style.width = cols * 32 + 'px';
+
+    for(let r = 0; r < rows; r++) {
+        for(let c = 0; c < cols; c++) {
+            const cell = document.createElement('div');
+            cell.className = 'cell';
+            cell.dataset.row = r;
+            cell.dataset.col = c;
+            
+            if(gameState.revealed.has(`${r},${c}`)) {
+                cell.classList.add('revealed');
+                if(gameState.board[r][c] > 0) {
+                    cell.textContent = gameState.board[r][c];
+                }
+            }
+            
+            if(gameState.flags.has(`${r},${c}`)) {
+                cell.classList.add('flag');
+            }
+
+            cell.addEventListener('click', handleClick);
+            cell.addEventListener('contextmenu', handleRightClick);
+            board.appendChild(cell);
+        }
+    }
+}
+
+// 处理点击事件
+function handleClick(e) {
+    if(gameState.gameOver) return;
+    const row = parseInt(e.target.dataset.row);
+    const col = parseInt(e.target.dataset.col);
+    
+    if(gameState.firstClick) {
+        generateMines(row, col);
+        calculateNumbers();
+        gameState.firstClick = false;
+    }
+    
+    reveal(row, col);
+}
+
+// 递归揭示区域
+function reveal(r, c) {
+    if(gameState.flags.has(`${r},${c}`) || 
+       gameState.revealed.has(`${r},${c}`)) return;
+
+    gameState.revealed.add(`${r},${c}`);
+    
+    if(gameState.mines.has(`${r},${c}`)) {
+        gameOver(false);
+        return;
+    }
+
+    if(gameState.board[r][c] === 0) {
+        for(let dr = -1; dr <= 1; dr++) {
+            for(let dc = -1; dc <= 1; dc++) {
+                const nr = r + dr;
+                const nc = c + dc;
+                if(nr >= 0 && nr < gameState.rows && 
+                   nc >= 0 && nc < gameState.cols) {
+                    reveal(nr, nc);
+                }
+            }
+        }
+    }
+
+    checkWin();
+    renderBoard();
+}
+
+// 处理右键事件（插旗）
+function handleRightClick(e) {
+    e.preventDefault();
+    if(gameState.gameOver) return;
+    
+    const row = e.target.dataset.row;
+    const col = e.target.dataset.col;
+    const key = `${row},${col}`;
+    
+    if(gameState.flags.has(key)) {
+        gameState.flags.delete(key);
+    } else {
+        gameState.flags.add(key);
+    }
+    
+    renderBoard();
+}
+
+// 游戏结束处理
+function gameOver(won) {
+    gameState.gameOver = true;
+    const panel = document.querySelector('.result-panel');
+    const content = document.getElementById('result-content');
+    
+    content.innerHTML = won ? 
+        `<img src="${config[gameState.difficulty].victoryImg}" class="victory-img">` : 
+        '<h2>游戏失败！</h2>';
+    
+    panel.style.display = 'block';
+}
+
+// 重新开始函数
+function restartGame() {
+    document.querySelector('.result-panel').style.display = 'none';
+    initGame(gameState.difficulty);
+}
+
+// 返回主菜单
+function backToMenu() {
+    document.getElementById('main-menu').style.display = 'block';
+    document.getElementById('game-board').style.display = 'none';
+    document.querySelector('.result-panel')?.remove();
+}
+
+// 检查是否胜利
+function checkWin() {
+    const { rows, cols, mines } = gameState;
+    const totalSafe = rows * cols - mines.size;
+    if(gameState.revealed.size === totalSafe) {
+        gameOver(true);
+    }
+}
+
+// 绑定难度按钮事件
+document.querySelectorAll('.difficulty-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+        initGame(btn.dataset.difficulty);
+    });
+});
+</script>
+</html>
